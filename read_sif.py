@@ -1,6 +1,10 @@
 """
 Read satellite data of solar induced fluorescence
-- `read_gome2_l2()`: read GOME-2 SIF Level 2 data
+
+(c) 2017 Wu Sun <wu.sun@ucla.edu>
+
+- `read_gome2_l2`: Read GOME-2 SIF Level 2 data
+- `read_gome2_l3`: Read GOME-2 SIF Level 3 data
 
 """
 import os
@@ -12,8 +16,6 @@ import netCDF4
 def read_gome2_l2(filepath, lat=None, lon=None):
     """
     Read GOME-2 SIF Level 2 data (whole file or single point).
-
-    (c) 2017 Wu Sun <wu.sun@ucla.edu>
 
     Parameters
     ----------
@@ -77,3 +79,67 @@ def read_gome2_l2(filepath, lat=None, lon=None):
         pass
 
     return df_sif
+
+
+def read_gome2_l3(filepath, lat=None, lon=None):
+    """
+    Read GOME-2 SIF Level 2 data (whole file or single point).
+
+    Parameters
+    ----------
+    @TODO: to be completed
+
+    Return
+    ------
+    panel_sif : pandas.Panel
+        A 3D panel structure, the first dimension is the variable name
+        (also known as 'item'), the second one is the latitude index, and
+        the third one is the longitude.
+        Note that 4D and N-dimensional panels have been deprecated. For
+        concatenating multiple panel data objects to form a time series,
+        please use the `xarray` package.
+
+    Raise
+    -----
+    RuntimeError
+        If the file is not found.
+
+    """
+    nc_fid = netCDF4.Dataset(filepath, 'r')
+
+    variable_names = [key for key in nc_fid.variables
+                      if key not in ['latitude', 'longitude']]
+    n_lat, n_lon = nc_fid.variables['SIF_740'][:].shape
+    latitude = nc_fid.variables['latitude'][:]
+    longitude = nc_fid.variables['longitude'][:]
+
+    panel_sif = pd.Panel(items=variable_names, major_axis=np.arange(n_lat),
+                         minor_axis=np.arange(n_lon))
+
+    for var in variable_names:
+        panel_sif[var] = nc_fid.variables[var][:]
+
+    panel_sif.rename(items={'cos(SZA)': 'cos_SZA'}, inplace=True)
+
+    # cast latitude and longitude as 2D arrays
+    panel_sif['latitude'] = np.repeat(np.array([latitude]).T, n_lon, axis=1)
+    panel_sif['longitude'] = np.repeat(np.array([longitude]), n_lat, axis=0)
+
+    filename = os.path.basename(filepath)
+    if 'MOB' in filename:
+        satellite = 'MetOp-B'
+    else:
+        satellite = 'MetOp-A'
+
+    date_str = filename.split('_')[-2][0:8]
+    date_str = '-'.join([date_str[0:4], date_str[4:6], date_str[6:8]])
+
+    # store some meta data information
+    panel_sif._metadata = {'date': date_str, 'filename': filename,
+                           'satellite': satellite, 'level': 3}
+
+    if lat is None and lon is None:
+        # @TODO: add the point extraction functionality
+        pass
+
+    return panel_sif

@@ -5,6 +5,8 @@ UCLA Department of Atmospheric and Oceanic Sciences
 
 Dec 20, 2016
 
+License: [GPL v3](https://www.gnu.org/licenses/gpl-3.0-standalone.html)
+
 **Under construction!!**
 
 ## Dependencies
