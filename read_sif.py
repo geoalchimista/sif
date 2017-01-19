@@ -41,7 +41,8 @@ def read_gome2_l2(filepath, lat=None, lon=None):
 
     df_sif.insert(0, 'datetime', np.datetime64('nat'))
 
-    date_str = os.path.basename(filepath).split('nolog.')[1][0:8]
+    filename = os.path.basename(filepath)
+    date_str = filename.split('nolog.')[1][0:8]
     date_str = '-'.join([date_str[0:4], date_str[4:6], date_str[6:8]])
     for i in range(df_sif.shape[0]):
         time_str = ''.join(nc_fid.variables['time'][i].astype('|U1'))
@@ -57,8 +58,14 @@ def read_gome2_l2(filepath, lat=None, lon=None):
         df_sif['Longitude_corner_' + str(i + 1)] = \
             nc_fid.variables['Longitude_corners'][:][:, i]
 
+    # store single numbers in the metadata (require pandas 0.13+)
+    df_sif._metadata = {
+        'calibration factor': nc_fid.variables['Calibration_factor'][:][0],
+        'filename': filename,
+        'level': 2}
+
     if lat is None and lon is None:
-        # @TODO
+        # @TODO: add the point extraction functionality
         pass
 
     return df_sif
