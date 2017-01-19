@@ -61,9 +61,9 @@ def read_gome2_l2(filepath, lat=None, lon=None):
         np.timedelta64(1, 'D')
 
     for i in range(4):
-        df_sif['Latitude_corner_' + str(i + 1)] = \
+        df_sif['latitude_corner_' + str(i + 1)] = \
             nc_fid.variables['Latitude_corners'][:][:, i]
-        df_sif['Longitude_corner_' + str(i + 1)] = \
+        df_sif['longitude_corner_' + str(i + 1)] = \
             nc_fid.variables['Longitude_corners'][:][:, i]
 
     # store calibration factor and other meta information in `_metadata`
@@ -119,7 +119,11 @@ def read_gome2_l3(filepath, lat=None, lon=None):
     for var in variable_names:
         panel_sif[var] = nc_fid.variables[var][:]
 
-    panel_sif.rename(items={'cos(SZA)': 'cos_SZA'}, inplace=True)
+    panel_sif.rename(items={
+        'cos(SZA)': 'cos_SZA',
+        'Par_normalized_SIF_740': 'PAR_normalized_SIF_740',
+        'Par_normalized_SIF_740_std': 'PAR_normalized_SIF_740_std',
+        'Counts': 'counts'}, inplace=True)
 
     # cast latitude and longitude as 2D arrays
     panel_sif['latitude'] = np.repeat(np.array([latitude]).T, n_lon, axis=1)
