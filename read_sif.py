@@ -140,6 +140,12 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
                 df_sif['longitude_corner_' + str(i + 1)] = nc_fid.variables[
                     'Longitude_corners'][:][nearest_point_index, i]
 
+    # correct the column names for data from the red band
+    if 'SIF_685' in df_sif.columns and 'SIF_error' in df_sif.columns:
+        df_sif.rename(columns={'SIF_error': 'SIF_685_error',
+                               'SIF_uncorrected': 'SIF_685_uncorrected'},
+                      inplace=True)
+
     # store calibration factor and other meta information in `_metadata`
     # (requires pandas 0.13+)
     df_sif._metadata = {
