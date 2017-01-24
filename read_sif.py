@@ -91,7 +91,24 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
         date_str + 'T' + ''.join(nc_fid.variables['time'][0].astype('|U1')))
 
     # do the point extraction when `lat` and `lon` parameters are both given
-    if lat is not None and lon is not None:
+    if lat is None or lon is None:
+        # won't do the point extraction and will return the whole dataset
+        for var in variable_names:
+            df_sif[var] = nc_fid.variables[var][:]
+        # unpack lat/lon corners (not sure what those variables mean)
+        for i in range(4):
+            df_sif['latitude_corner_' + str(i + 1)] = \
+                nc_fid.variables['Latitude_corners'][:][:, i]
+            df_sif['longitude_corner_' + str(i + 1)] = \
+                nc_fid.variables['Longitude_corners'][:][:, i]
+        # convert char timestamps to `numpy.datetime64` format
+        for i in range(df_sif.shape[0]):
+            time_str = ''.join(nc_fid.variables['time'][i].astype('|U1'))
+            df_sif = df_sif.set_value(
+                i, 'datetime', np.datetime64('T'.join([date_str, time_str])))
+        df_sif.loc[df_sif['datetime'] < datetime_start, 'datetime'] += \
+            np.timedelta64(1, 'D')
+    else:
         great_arc_dist = great_arc(
             [lat, lon],
             np.vstack([nc_fid.variables['latitude'][:],
@@ -122,23 +139,6 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
                     'Latitude_corners'][:][nearest_point_index, i]
                 df_sif['longitude_corner_' + str(i + 1)] = nc_fid.variables[
                     'Longitude_corners'][:][nearest_point_index, i]
-    else:
-        # won't do the point extraction and will return the whole dataset
-        for var in variable_names:
-            df_sif[var] = nc_fid.variables[var][:]
-        # unpack lat/lon corners (not sure what those variables mean)
-        for i in range(4):
-            df_sif['latitude_corner_' + str(i + 1)] = \
-                nc_fid.variables['Latitude_corners'][:][:, i]
-            df_sif['longitude_corner_' + str(i + 1)] = \
-                nc_fid.variables['Longitude_corners'][:][:, i]
-        # convert char timestamps to `numpy.datetime64` format
-        for i in range(df_sif.shape[0]):
-            time_str = ''.join(nc_fid.variables['time'][i].astype('|U1'))
-            df_sif = df_sif.set_value(
-                i, 'datetime', np.datetime64('T'.join([date_str, time_str])))
-        df_sif.loc[df_sif['datetime'] < datetime_start, 'datetime'] += \
-            np.timedelta64(1, 'D')
 
     # store calibration factor and other meta information in `_metadata`
     # (requires pandas 0.13+)
@@ -151,7 +151,7 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
     return df_sif
 
 
-def read_gome2_l3(filepath, lat=None, lon=None):
+def read_gome2_l3(filepath, lat=None, lon=None, dist_tolerance=56e3):
     """
     Read GOME-2 SIF Level 2 data (whole file or single point).
 
@@ -169,36 +169,16 @@ def read_gome2_l3(filepath, lat=None, lon=None):
         concatenating multiple panel data objects to form a time series,
         please use the `xarray` package.
 
+    df_sif : pandas.DataFrame
+        If point extraction
+
     Raise
     -----
     RuntimeError
         If the file is not found.
 
     """
-    nc_fid = netCDF4.Dataset(filepath, 'r')
-
-    variable_names = [key for key in nc_fid.variables
-                      if key not in ['latitude', 'longitude']]
-    n_lat, n_lon = nc_fid.variables['SIF_740'][:].shape
-    latitude = nc_fid.variables['latitude'][:]
-    longitude = nc_fid.variables['longitude'][:]
-
-    panel_sif = pd.Panel(items=variable_names, major_axis=np.arange(n_lat),
-                         minor_axis=np.arange(n_lon))
-
-    for var in variable_names:
-        panel_sif[var] = nc_fid.variables[var][:]
-
-    panel_sif.rename(items={
-        'cos(SZA)': 'cos_SZA',
-        'Par_normalized_SIF_740': 'PAR_normalized_SIF_740',
-        'Par_normalized_SIF_740_std': 'PAR_normalized_SIF_740_std',
-        'Counts': 'counts'}, inplace=True)
-
-    # cast latitude and longitude as 2D arrays
-    panel_sif['latitude'] = np.repeat(np.array([latitude]).T, n_lon, axis=1)
-    panel_sif['longitude'] = np.repeat(np.array([longitude]), n_lat, axis=0)
-
+    # from filename, parse the date string and the satellite name
     filename = os.path.basename(filepath)
     if 'MOB' in filename:
         satellite = 'MetOp-B'
@@ -208,12 +188,81 @@ def read_gome2_l3(filepath, lat=None, lon=None):
     date_str = filename.split('_')[-2][0:8]
     date_str = '-'.join([date_str[0:4], date_str[4:6], date_str[6:8]])
 
-    # store some meta data information
-    panel_sif._metadata = {'date': date_str, 'filename': filename,
-                           'satellite': satellite, 'level': 3}
+    # read the data and create `pandas.DataFrame` for reformatting
+    nc_fid = netCDF4.Dataset(filepath, 'r')
 
-    if lat is None and lon is None:
-        # @TODO: add the point extraction functionality
-        pass
+    variable_names = [key for key in nc_fid.variables
+                      if key not in ['latitude', 'longitude']]
+    n_lat, n_lon = nc_fid.variables['SIF_740'][:].shape
+    latitude = nc_fid.variables['latitude'][:]
+    longitude = nc_fid.variables['longitude'][:]
 
-    return panel_sif
+    # cast latitude and longitude as 2D arrays
+    grid_lat = np.repeat(np.array([latitude]).T, n_lon, axis=1)
+    grid_lon = np.repeat(np.array([longitude]), n_lat, axis=0)
+
+    if lat is None or lon is None:
+        # won't do the point extraction and will return the whole dataset
+        panel_sif = pd.Panel(items=variable_names, major_axis=np.arange(n_lat),
+                             minor_axis=np.arange(n_lon))
+
+        for var in variable_names:
+            panel_sif[var] = nc_fid.variables[var][:]
+
+        panel_sif.rename(items={
+            'cos(SZA)': 'cos_SZA',
+            'Par_normalized_SIF_740': 'PAR_normalized_SIF_740',
+            'Par_normalized_SIF_740_std': 'PAR_normalized_SIF_740_std',
+            'Counts': 'counts'}, inplace=True)
+
+        panel_sif['latitude'] = grid_lat
+        panel_sif['longitude'] = grid_lon
+
+        # 'counts' should be integers
+        panel_sif['counts'] = panel_sif['counts'].astype(np.int64)
+        # use proper NaN notation for missing data
+        panel_sif.replace(-999., np.nan, inplace=True)
+        # store some meta data information
+        panel_sif._metadata = {'date': date_str, 'filename': filename,
+                               'satellite': satellite, 'level': 3}
+
+        return panel_sif
+    else:
+        df_sif = pd.DataFrame(columns=variable_names)
+        great_arc_dist = great_arc(
+            [lat, lon], np.vstack([grid_lat.flatten(), grid_lon.flatten()]).T)
+        min_dist = np.nanmin(great_arc_dist)
+
+        if (min_dist > dist_tolerance) or np.isnan(min_dist):
+            # @TODO: add warning information
+            # will return a blank dataframe
+            df_sif['latitude'] = []
+            df_sif['longitude'] = []
+        else:
+            nearest_point_index = np.nanargmin(great_arc_dist)
+            nearest_point_indices = (nearest_point_index // n_lon,
+                                     nearest_point_index % n_lon)
+            df_sif = df_sif.set_value(
+                0, 'latitude', grid_lat[nearest_point_indices])
+            df_sif = df_sif.set_value(
+                0, 'longitude', grid_lon[nearest_point_indices])
+
+            for var in variable_names:
+                df_sif = df_sif.set_value(
+                    0, var, nc_fid.variables[var][:][nearest_point_indices])
+
+            df_sif.rename(columns={
+                'cos(SZA)': 'cos_SZA',
+                'Par_normalized_SIF_740': 'PAR_normalized_SIF_740',
+                'Par_normalized_SIF_740_std': 'PAR_normalized_SIF_740_std',
+                'Counts': 'counts'}, inplace=True)
+
+        # 'counts' should be integers
+        df_sif['counts'] = df_sif['counts'].astype(np.int64)
+        # use proper NaN notation for missing data
+        df_sif.replace(-999., np.nan, inplace=True)
+        # store some meta data information
+        df_sif._metadata = {'date': date_str, 'filename': filename,
+                            'satellite': satellite, 'level': 3}
+
+        return df_sif
