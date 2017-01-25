@@ -86,7 +86,7 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
                       ['time', 'Calibration_factor',
                        'Latitude_corners', 'Longitude_corners']]
     df_sif = pd.DataFrame(columns=variable_names)
-    df_sif.insert(0, 'datetime', None)
+    df_sif.insert(0, 'datetime', np.datetime64('nat'))
 
     datetime_start = np.datetime64(
         date_str + 'T' + ''.join(nc_fid.variables['time'][0].astype('|U1')))
@@ -146,7 +146,11 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
                 df_sif['longitude_corner_' + str(i + 1)] = nc_fid.variables[
                     'Longitude_corners'][:][nearest_point_index, i]
 
-    # correct the column names for data from the red band
+    # rectify differences in column names
+    if 'SIF_740' in df_sif.columns and 'SIF_error' in df_sif.columns:
+        df_sif.rename(columns={'SIF_error': 'SIF_740_error',
+                               'SIF_uncorrected': 'SIF_740_uncorrected'},
+                      inplace=True)
     if 'SIF_685' in df_sif.columns and 'SIF_error' in df_sif.columns:
         df_sif.rename(columns={'SIF_error': 'SIF_685_error',
                                'SIF_uncorrected': 'SIF_685_uncorrected'},
