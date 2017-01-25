@@ -14,10 +14,11 @@ import pandas as pd
 import netCDF4
 
 
-def great_arc(p1, p2, formula=None, radian=False):
+def great_arc(p1, p2, method=None, radian=False):
     """
     Calculate the great arc length between two points on a spherical surface.
 
+    @TODO: add other methods
     """
     # force to be numpy array (for list or tuple input)
     p1 = np.array(p1, dtype='float64')
@@ -35,13 +36,13 @@ def great_arc(p1, p2, formula=None, radian=False):
 
     R_earth = 6.371e6  # mean radius, not equator radius, in m
 
-    if formula is None:
+    if method is None:
         delta_sigma = np.arccos(
             np.sin(lat1) * np.sin(lat2) +
             np.cos(lat1) * np.cos(lat2) * np.cos(lon1 - lon2))
-    elif formula is 'haversine':
+    elif method is 'haversine':
         pass
-    elif formula is 'vincenty':
+    elif method is 'vincenty':
         pass
 
     return R_earth * delta_sigma
@@ -85,7 +86,7 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
                       ['time', 'Calibration_factor',
                        'Latitude_corners', 'Longitude_corners']]
     df_sif = pd.DataFrame(columns=variable_names)
-    df_sif.insert(0, 'datetime', np.datetime64('nat'))
+    df_sif.insert(0, 'datetime', None)
 
     datetime_start = np.datetime64(
         date_str + 'T' + ''.join(nc_fid.variables['time'][0].astype('|U1')))
@@ -102,10 +103,15 @@ def read_gome2_l2(filepath, lat=None, lon=None, dist_tolerance=50e3):
             df_sif['longitude_corner_' + str(i + 1)] = \
                 nc_fid.variables['Longitude_corners'][:][:, i]
         # convert char timestamps to `numpy.datetime64` format
-        for i in range(df_sif.shape[0]):
-            time_str = ''.join(nc_fid.variables['time'][i].astype('|U1'))
-            df_sif = df_sif.set_value(
-                i, 'datetime', np.datetime64('T'.join([date_str, time_str])))
+        # use element-wise concatenation rule on `numpy.chararray`
+        time_chararr = nc_fid.variables['time'][:]
+        datetime_chararr = np.chararray(time_chararr.shape[0], itemsize=11)
+        datetime_chararr[:] = date_str + 'T'
+        for i in range(time_chararr.shape[1]):
+            datetime_chararr = datetime_chararr + time_chararr[:, i]
+        # cast as `numpy.ndarray` and convert to `numpy.datetime64` type
+        datetime_chararr = np.array(datetime_chararr).astype('|U')
+        df_sif['datetime'] = datetime_chararr.astype(np.datetime64)
         df_sif.loc[df_sif['datetime'] < datetime_start, 'datetime'] += \
             np.timedelta64(1, 'D')
     else:
